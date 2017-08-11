@@ -19,8 +19,8 @@ import collections
 
 # Global variable
 __author__ = "Kazuyuki OHMI"
-__version__ = "2.3.0"
-__date__ = "2017/04/05"
+__version__ = "2.4.0"
+__date__ = "2017/08/11"
 __license__ = "MIT"
 
 class CmdParser(argparse.ArgumentParser):
@@ -32,10 +32,10 @@ class CmdParser(argparse.ArgumentParser):
 
     def __init__(self, functions=[], *args, **kwargs):
         """
-        初期処理を行います。
-            デバッグオプションを有効にするには、debug=Falseを設定します。
+        コンストラクタ
+        デバッグオプションを有効にするには、debug=Falseを設定します。
 
-        :param list functions:  パーサーに設定する関数
+        :param list functions:  コマンドに設定する関数
         """
 
         if not isinstance(functions, list):
@@ -45,7 +45,6 @@ class CmdParser(argparse.ArgumentParser):
         stacks = inspect.stack()
         caller_frame = stacks[1]
         framerecord = caller_frame[0]
-        #pprint.pprint(repr(framerecord.f_globals))
 
         # docstringを設定します。
         description = framerecord.f_globals.get("__doc__", "")
@@ -89,7 +88,7 @@ class CmdParser(argparse.ArgumentParser):
                             type=values.get(name).get("type"),
                             help=values.get(name).get("usage"))
                     else:
-                        # デフォルト値があれば、任意引数にする。
+                        # デフォルト値があれば、任意引数にします。
                         action.add_argument("--" + name,
                             type=values.get(name).get("type"),
                             default=values.get(name).get("default"),
@@ -116,7 +115,7 @@ class CmdParser(argparse.ArgumentParser):
         values = vars(parsed_arg)
         values.update(kwargs)
 
-        # コマンドを処理する。
+        # コマンドを処理します。
         if hasattr(parsed_arg, 'func'):
             result = parsed_arg.func(*args, **values)
         else:
@@ -127,7 +126,7 @@ class CmdParser(argparse.ArgumentParser):
 
 def parse_sphinx(func, *args, **kwargs):
     """
-    Sphinx スタイルの docstrings をパースします。
+    Sphinx スタイルの docstrings をパースします(廃止予定->parse_sphinx2)。
 
     :param function func: 関数
     :rtype:               dict
@@ -135,93 +134,199 @@ def parse_sphinx(func, *args, **kwargs):
     """
 
     values = collections.OrderedDict()
-    text = func.__doc__
+    func_doc = func.__doc__
 
-    # ソースコードを取得する。
-    _src = inspect.getsource(dummy)
+    # ソースコードを取得します。
+    _src = inspect.getsource(func)
 
-    # デフォルトパラメータを取得する。
-    argspec = inspect.getargspec(dummy)
+    # デフォルトパラメータを取得します。
+    argspec = inspect.getargspec(func)
     arg_names = list(argspec.args)
+
+    # 後ろから引き当てます。
     arg_names.reverse()
-    arg_values = list(argspec.defaults)
-    defaults = dict(zip(arg_names, arg_values))
+    if argspec.defaults is None:
+        arg_values = list()
+    else:
+        arg_values = list(argspec.defaults)
+
+    args_default = dict()
+    for arg_name in arg_names:
+        if len(arg_values) != 0:   
+            default_value = arg_values.pop(0)
+        else:
+            default_value = None
+        args_default[arg_name] = default_value
 
     # name
     values["name"] = func.__name__
 
-    # description を設定する。
-    m_desc = re.search(r"([\s\S]*?):", text)
+    # description を設定します。
+    if func_doc is not None:
+        m_desc = re.search(r"([\s\S]*?):", func_doc)
+    else:
+        m_desc = None
+    
     if m_desc:
         values["description"] = m_desc.group(1).strip()
     else:
         values["description"] = ""
 
-    fileds = re.findall(r"(\S*:.*?:.*)", text)
 
-    # パラメータを設定する。
-    for filed_line in fileds:
-        match = re.search(r":param\s*(.*)\s(.+):(.*)", filed_line)
-        if match:
-            typ = None
-            txt_type = match.group(1).strip()
-            txt_name = match.group(2).strip()
-            txt_help = match.group(3).strip()
+    # パラメータを設定します。
+    if func_doc is not None:
+        fileds = re.findall(r"(\S*:.*?:.*)", func_doc)
+        for filed_line in fileds:
+            match = re.search(r":param\s*(.*)\s(.+):(.*)", filed_line)
+            if match:
+                typ = None
+                txt_type = match.group(1).strip()
+                txt_name = match.group(2).strip()
+                txt_help = match.group(3).strip()
 
-            """
-            Python 3 renamed the unicode type to str, the old str type has been replaced by bytes.
-            """
-            if txt_type == "int":
-                typ = int
-            elif txt_type == "str":
-                typ = str
-            elif txt_type == "b":
-                typ = str
-            elif txt_type == "unicode":
-                typ = unicode
-            elif txt_type == "u":
-                typ = unicode
-            elif txt_type == "list":
-                typ = list
-            elif txt_type == "tuple":
-                typ = tuple
-            elif txt_type == "bytes":
-                typ = bytes
-            elif txt_type == "bool":
-                typ = bool
+                """
+                Python 3 renamed the unicode type to str, the old str type has been replaced by bytes.
+                """
+                if txt_type == "int":
+                    typ = int
+                elif txt_type == "str":
+                    typ = str
+                elif txt_type == "b":
+                    typ = str
+                elif txt_type == "unicode":
+                    typ = unicode
+                elif txt_type == "u":
+                    typ = unicode
+                elif txt_type == "list":
+                    typ = list
+                elif txt_type == "tuple":
+                    typ = tuple
+                elif txt_type == "bytes":
+                    typ = bytes
+                elif txt_type == "bool":
+                    typ = bool
 
-            values[txt_name] = {"help": txt_help, "type":typ}
+                values[txt_name] = {"help": txt_help, "type":typ}
 
-            if defaults.get(txt_name) is not None:
-                values[txt_name]["default"] = defaults.get(txt_name)
-                values[txt_name]["help"] += " (%s)" % str(defaults.get(txt_name))
+                if args_default.get(txt_name) is not None:
+                    values[txt_name]["default"] = args_default.get(txt_name)
+                    values[txt_name]["help"] += " (%s)" % str(args_default.get(txt_name))
 
-        match = re.search(r":type\s*(.*):(.*)", filed_line)
-        if match:
-            typ = None
-            txt_name = match.group(1).strip()
-            txt_type = match.group(2).strip()
+            match = re.search(r":type\s*(.*):(.*)", filed_line)
+            if match:
+                typ = None
+                txt_name = match.group(1).strip()
+                txt_type = match.group(2).strip()
 
-            if txt_type == "int":
-                typ = int
-            elif txt_type == "str":
-                typ = str
-            elif txt_type == "list":
-                typ = list
-            elif txt_type == "tuple":
-                typ = tuple
-            elif txt_type == "bytes":
-                typ = bytes
-            elif txt_type == "bool":
-                typ = bool
+                if txt_type == "int":
+                    typ = int
+                elif txt_type == "str":
+                    typ = str
+                elif txt_type == "list":
+                    typ = list
+                elif txt_type == "tuple":
+                    typ = tuple
+                elif txt_type == "bytes":
+                    typ = bytes
+                elif txt_type == "bool":
+                    typ = bool
 
-            values[txt_name]["type"] = typ
+                values[txt_name]["type"] = typ
 
     return values
 
+def parse_sphinx2(func, *args, **kwargs):
+    """
+    Sphinx スタイルの docstrings をパースします。
+
+    :param function func: 関数
+    :rtype:               OrderedDict
+    :return:              関数の引数
+    """
+
+    results = collections.OrderedDict()
+    func_doc = func.__doc__
+
+    # ソースコードを取得します。
+    _src = inspect.getsource(func)
+
+    # デフォルトパラメータを取得します。
+    argspec = inspect.getargspec(func)
+    arg_names = list(argspec.args)
+
+    # 後ろから引き当てます。
+    arg_names.reverse()
+    if argspec.defaults is None:
+        arg_values = list()
+    else:
+        arg_values = list(argspec.defaults)
+
+    args_default = dict()
+    for arg_name in arg_names:
+        if len(arg_values) != 0:   
+            default_value = arg_values.pop(0)
+        else:
+            default_value = None
+        args_default[arg_name] = default_value
+
+    # name
+    results["name"] = func.__name__
+
+    # description を設定します。
+    if func_doc is not None:
+        m_desc = re.search(r"([\s\S]*?):", func_doc)
+    else:
+        m_desc = None
+    
+    if m_desc:
+        results["description"] = m_desc.group(1).strip()
+    else:
+        results["description"] = ""
+
+
+    # パラメータを設定します。
+    results["args"] = []
+    for arg_name in arg_names:
+        arg = {}
+        arg["name"] = arg_name
+        arg["default"] = args_default.get(arg_name)
+        pattern = ":param\s*(.*)\s*%s\s*:(.*)" % arg_name
+        match = re.search(pattern, func_doc)
+        if match is None:
+            arg["type"] = None
+            arg["help"] = None
+        else:            
+            arg_type = match.group(1).strip()
+            arg_help = match.group(2).strip()
+
+            if arg_type == "int":
+                arg["type"] = int
+            elif arg_type == "str":
+                arg["type"] = str
+            elif arg_type == "b":
+                arg["type"] = str
+            elif arg_type == "unicode":
+                arg["type"] = unicode
+            elif arg_type == "u":
+                arg["type"] = unicode
+            elif arg_type == "list":
+                arg["type"] = list
+            elif arg_type == "tuple":
+                arg["type"] = tuple
+            elif arg_type == "bytes":
+                arg["type"] = bytes
+            elif arg_type == "bool":
+                arg["type"] = bool
+
+            arg[help] = arg_help
+
+        results["args"].append(arg)
+
+    return results
+
 def get_functions(mod):
     """
-    関数の一覧を取得する。
+    関数の一覧を取得します。
     :param module mod: モジュール ex.) sys.modules[__name__]
     :rtype:            list
     :return:           関数の一覧
